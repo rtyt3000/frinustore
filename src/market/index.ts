@@ -5,7 +5,7 @@ import { iconFor } from './icons.js'
 // public channel with the catalog (pinned `catalog.json`) and the plugin files
 const CHANNEL = 'frinu_store'
 // bot with inline mode on; it records installs from inline queries
-const BOT = 'frinu_store_bot'
+const BOT = 'frinustore_bot'
 const CACHE_KEY = 'catalog'
 
 let catalog: Catalog | null = readCache()
