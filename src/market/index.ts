@@ -1,8 +1,9 @@
 import type { Catalog, CatalogPlugin, CatalogVersion } from '../shared/catalog.js'
 import type { SortMode } from '../shared/catalog.js'
-import { latest, localized, safeRepoUrl, SORT_MODES, sortPlugins } from '../shared/catalog.js'
+import { compareVersions, latest, localized, safeRepoUrl, SORT_MODES, sortPlugins } from '../shared/catalog.js'
 import { buildGallery } from './gallery.js'
 import { iconFor } from './icons.js'
+import { scanInstalled } from './installed.js'
 
 // public channel with the catalog (pinned `catalog.json`) and the plugin files
 const CHANNEL = 'frinu_store'
@@ -12,6 +13,7 @@ const CACHE_KEY = 'catalog'
 
 let catalog: Catalog | null = readCache()
 let loading = false
+let installed: Map<string, string> | null = null
 let started = false
 let error: string | null = null
 
@@ -54,6 +56,7 @@ function refresh(): void {
   error = null
   loadCatalog()
     .then((c) => {
+      installed = scanInstalled()
       catalog = c
       localStorage.setItem(CACHE_KEY, JSON.stringify(c))
     })
@@ -114,6 +117,10 @@ const STRINGS = {
   sort: { en: 'Sort by', ru: 'Сортировка' },
   repo: { en: 'Source code', ru: 'Исходный код' },
   noRepo: { en: 'No repository', ru: 'Нет репозитория' },
+  updates: { en: 'Updates available', ru: 'Доступны обновления' },
+  all: { en: 'All plugins', ru: 'Все плагины' },
+  update: { en: 'Update to', ru: 'Обновить до' },
+  installedVersion: { en: 'Installed', ru: 'Установлена' },
   noFile: { en: 'File not found', ru: 'Файл не найден' },
 } as const
 
@@ -143,11 +150,22 @@ function readSort(): SortMode {
 let sort: SortMode = readSort()
 let query = ''
 
-function visiblePlugins(): CatalogPlugin[] {
+// installed version when the plugin is installed and the catalog has a newer one
+function updateFrom(p: CatalogPlugin): string | null {
+  const have = installed?.get(p.id)
+  const newest = latest(p)
+  return have && newest && compareVersions(newest.version, have) > 0 ? have : null
+}
+
+function visiblePlugins(): { updates: CatalogPlugin[], rest: CatalogPlugin[] } {
   const q = query.trim().toLowerCase()
-  const found = (catalog?.plugins ?? [])
-    .filter(p => !q || `${p.name} ${p.author} ${localized(p.description, lang())}`.toLowerCase().includes(q))
-  return sortPlugins(found, sort)
+  const found = sortPlugins(
+    (catalog?.plugins ?? [])
+      .filter(p => !q || `${p.name} ${p.author} ${localized(p.description, lang())}`.toLowerCase().includes(q)),
+    sort,
+  )
+  // plugins that need an update go first, in the chosen order
+  return { updates: found.filter(p => updateFrom(p)), rest: found.filter(p => !updateFrom(p)) }
 }
 
 function installSafely(plugin: CatalogPlugin, version: CatalogVersion): void {
@@ -162,10 +180,16 @@ function openDetail(plugin: CatalogPlugin): void {
     title: plugin.name,
     transient: true,
     bottomButton: newest
-      ? { text: `${t('installLatest')} ${newest.version}`, onClick: () => installSafely(plugin, newest) }
+      ? {
+          text: `${updateFrom(plugin) ? t('update') : t('installLatest')} ${newest.version}`,
+          onClick: () => installSafely(plugin, newest),
+        }
       : undefined,
     items: () => [
       inu.ui.header(`${plugin.author} · ${plugin.installs} ${t('installs')}`),
+      ...(installed?.get(plugin.id)
+        ? [inu.ui.separator(`${t('installedVersion')}: ${installed.get(plugin.id)}`)]
+        : []),
       inu.ui.separator(localized(plugin.description, lang())),
       ...(shots ? [shots] : []),
       inu.ui.button({
@@ -207,7 +231,19 @@ const listPage = inu.ui.settingsPage({
       started = true
       setTimeout(refresh, 0)
     }
-    const plugins = visiblePlugins()
+    const { updates, rest } = visiblePlugins()
+    const row = (p: CatalogPlugin) => {
+      const v = latest(p)
+      const from = updateFrom(p)
+      return inu.ui.button({
+        id: `p:${p.id}`,
+        text: p.name,
+        subtitle: localized(p.description, lang()),
+        icon: iconFor(p.icon),
+        value: from ? `${from} → ${v?.version}` : v?.version,
+        onClick: () => openDetail(p),
+      })
+    }
     return [
       inu.ui.button({
         id: 'search',
@@ -241,18 +277,10 @@ const listPage = inu.ui.settingsPage({
       }),
       ...(error ? [inu.ui.separator(`${t('error')}: ${error}`)] : []),
       ...(loading && !catalog ? [inu.ui.separator(t('loading'))] : []),
-      ...(!loading && catalog && plugins.length === 0 ? [inu.ui.separator(t('empty'))] : []),
-      ...plugins.map((p) => {
-        const v = latest(p)
-        return inu.ui.button({
-          id: `p:${p.id}`,
-          text: p.name,
-          subtitle: localized(p.description, lang()),
-          icon: iconFor(p.icon),
-          value: v?.version,
-          onClick: () => openDetail(p),
-        })
-      }),
+      ...(!loading && catalog && updates.length + rest.length === 0 ? [inu.ui.separator(t('empty'))] : []),
+      ...(updates.length ? [inu.ui.header(t('updates')), ...updates.map(row)] : []),
+      ...(updates.length && rest.length ? [inu.ui.header(t('all'))] : []),
+      ...rest.map(row),
     ]
   },
 })
