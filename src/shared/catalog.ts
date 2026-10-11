@@ -8,6 +8,7 @@ export interface CatalogVersion {
   /** unix seconds */
   date: number
   changelog?: string
+  /** informational, taken from the file header when it parsed; the app shows the real grants on install */
   grants?: string[]
 }
 
