@@ -51,7 +51,9 @@ bun x inu list                    # установленные плагины
 
 ## Гранты плагина
 
-`account.read(peers)`, `account.read(messages)`, `invokeRpc(messages.search)`, `invokeRpc(messages.getInlineBotResults)`, `openUrl`. Без `unsafe.*`.
+`account.read(peers)`, `account.read(messages)`, `invokeRpc(messages.search)`, `invokeRpc(messages.getInlineBotResults)`, `openUrl`, `unsafe.jvm`.
+
+`unsafe.jvm` нужен только для ленты скриншотов на странице плагина (нативные `ImageView` в `HorizontalScrollView`, только стоковые классы Android, без xposed). Приложение показывает этот грант как опасный. Без него плагин работает, кроме скриншотов: уберите грант и `src/market/gallery.ts`.
 
 ## Настройка
 
@@ -62,4 +64,5 @@ bun x inu list                    # установленные плагины
 - Публичного API установки плагина нет: установка идёт через тап по файлу в открытом сообщении (проверить на устройстве).
 - Нет API списка установленных плагинов, поэтому статусов «установлен» и «есть обновление» нет.
 - Ссылка на репозиторий обязательна для каждого плагина (задача бота: [docs/BOT_TASK_REPO.md](docs/BOT_TASK_REPO.md)).
+- Скриншоты: задача бота в [docs/BOT_TASK_SCREENSHOTS.md](docs/BOT_TASK_SCREENSHOTS.md); на клиенте не проверено на устройстве.
 - Иконки только встроенные, эмодзи и стикеры, произвольных картинок нет.

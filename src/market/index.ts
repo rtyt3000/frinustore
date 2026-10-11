@@ -1,6 +1,7 @@
 import type { Catalog, CatalogPlugin, CatalogVersion } from '../shared/catalog.js'
 import type { SortMode } from '../shared/catalog.js'
 import { latest, localized, safeRepoUrl, SORT_MODES, sortPlugins } from '../shared/catalog.js'
+import { buildGallery } from './gallery.js'
 import { iconFor } from './icons.js'
 
 // public channel with the catalog (pinned `catalog.json`) and the plugin files
@@ -156,7 +157,8 @@ function installSafely(plugin: CatalogPlugin, version: CatalogVersion): void {
 function openDetail(plugin: CatalogPlugin): void {
   const newest = latest(plugin)
   const repo = safeRepoUrl(plugin.repo)
-  inu.ui.openPage(inu.ui.settingsPage({
+  let shots: Awaited<ReturnType<typeof buildGallery>> = null
+  const page = inu.ui.settingsPage({
     title: plugin.name,
     transient: true,
     bottomButton: newest
@@ -165,6 +167,7 @@ function openDetail(plugin: CatalogPlugin): void {
     items: () => [
       inu.ui.header(`${plugin.author} · ${plugin.installs} ${t('installs')}`),
       inu.ui.separator(localized(plugin.description, lang())),
+      ...(shots ? [shots] : []),
       inu.ui.button({
         id: 'repo',
         text: t('repo'),
@@ -183,7 +186,17 @@ function openDetail(plugin: CatalogPlugin): void {
         onClick: () => installSafely(plugin, v),
       })),
     ],
-  }))
+  })
+  inu.ui.openPage(page)
+
+  if (plugin.screenshots?.length) {
+    buildGallery(inu.account(), CHANNEL, plugin.screenshots)
+      .then((el) => {
+        shots = el
+        page.invalidate()
+      })
+      .catch(e => console.warn('gallery failed', e))
+  }
 }
 
 const listPage = inu.ui.settingsPage({

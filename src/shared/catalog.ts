@@ -22,6 +22,8 @@ export interface CatalogPlugin {
   icon?: string
   /** https link to the source repository (GitHub, GitLab, ...); required by the bot */
   repo: string
+  /** ids of photo messages in the channel, shown as screenshots (up to 8) */
+  screenshots?: number[]
   /** installs made through the market */
   installs: number
   versions: CatalogVersion[]
