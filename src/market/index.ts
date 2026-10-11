@@ -2,7 +2,7 @@ import type { Catalog, CatalogPlugin, CatalogVersion } from '../shared/catalog.j
 import { latest, localized } from '../shared/catalog.js'
 
 // public channel with the catalog (pinned `catalog.json`) and the plugin files
-const CHANNEL = 'frinumarket'
+const CHANNEL = 'frinu_store'
 const CACHE_KEY = 'catalog'
 
 let catalog: Catalog | null = readCache()

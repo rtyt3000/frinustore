@@ -1,7 +1,7 @@
 # Plugin market
 
 ## Pieces
-1. **Channel** (public, `CHANNEL` in `src/market/index.ts`): pinned message with `catalog.json`
+1. **Channel** (public, https://t.me/frinu_store, `CHANNEL` in `src/market/index.ts`): pinned message with `catalog.json`
    (a document), below it one message per plugin version with the `.inu.js` file.
 2. **Bot** (TZ later): accepts plugins from users, validates, publishes files, rewrites
    `catalog.json` in the pinned message (edit media keeps the pin stable).
