@@ -24,6 +24,5 @@ Schema in `src/shared/catalog.ts` (`schema: 1`). Version files are referenced by
 - There is no public plugin-install API in SDK 45 (`common.d.ts`).
 - Installed/update detection: no API lists installed plugins, so "Update" state is not possible yet.
   Ask Inugram devs.
-- Install counter: the plugin cannot reliably report installs; options are a bot deep link
-  (`/start inst_<id>`) or counting file downloads. Decide in the bot TZ.
+- Install counter: plugin sends an inline query `install <id> <version>` to `BOT` (`messages.getInlineBotResults`); the bot records it. Bot username in `src/market/index.ts` is a placeholder.
 - Icons: only `inu://`, emoji, stickers, SVG; no arbitrary image avatars. Plugin `iconOf` is a stub.

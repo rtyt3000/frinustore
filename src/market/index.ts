@@ -3,6 +3,8 @@ import { latest, localized } from '../shared/catalog.js'
 
 // public channel with the catalog (pinned `catalog.json`) and the plugin files
 const CHANNEL = 'frinu_store'
+// bot with inline mode on; it records installs from inline queries
+const BOT = 'frinu_store_bot'
 const CACHE_KEY = 'catalog'
 
 let catalog: Catalog | null = readCache()
@@ -58,6 +60,20 @@ function refresh(): void {
     })
 }
 
+// tells the bot about an install: an inline query it records and answers with nothing
+async function reportInstall(plugin: CatalogPlugin, version: CatalogVersion): Promise<void> {
+  const account = inu.account()
+  const bot = await account.resolvePeer(BOT)
+  if (bot._ !== 'inputPeerUser') return
+  await account.invokeRpc({
+    _: 'messages.getInlineBotResults',
+    bot: { _: 'inputUser', user_id: bot.user_id, access_hash: bot.access_hash },
+    peer: { _: 'inputPeerEmpty' },
+    query: `install ${plugin.id} ${version.version}`,
+    offset: '',
+  })
+}
+
 // the stock installer opens when the user taps a `.inu.js` document in a chat,
 // so show the real file message and let the app handle the tap
 async function install(plugin: CatalogPlugin, version: CatalogVersion): Promise<void> {
@@ -68,6 +84,7 @@ async function install(plugin: CatalogPlugin, version: CatalogVersion): Promise<
     inu.ui.toast('File not found')
     return
   }
+  reportInstall(plugin, version).catch(() => {})
   inu.ui.openChatHistory({
     title: `${plugin.name} ${version.version}`,
     subtitle: 'Tap the file to install',

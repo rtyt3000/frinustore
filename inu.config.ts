@@ -11,7 +11,7 @@ export default defineConfig({
         version: '0.1.0',
         description: 'Catalog of Inugram plugins from a Telegram channel',
         icon: 'inu://bot',
-        grants: ['account.read(peers)', 'account.read(messages)', 'invokeRpc(messages.search)'],
+        grants: ['account.read(peers)', 'account.read(messages)', 'invokeRpc(messages.search)', 'invokeRpc(messages.getInlineBotResults)'],
       },
     },
   },
