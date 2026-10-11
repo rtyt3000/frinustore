@@ -83,7 +83,7 @@ async function reportInstall(plugin: CatalogPlugin, version: CatalogVersion): Pr
 
 // the stock installer opens when the user taps a `.inu.js` document in a chat,
 // so show the real file message and let the app handle the tap
-async function install(plugin: CatalogPlugin, version: CatalogVersion): Promise<void> {
+async function install(plugin: CatalogPlugin, version: CatalogVersion, onDone?: () => void): Promise<void> {
   const account = inu.account()
   const peer = await account.resolvePeer(CHANNEL)
   const message = await account.getMessages(peer, version.msgId)
@@ -92,11 +92,19 @@ async function install(plugin: CatalogPlugin, version: CatalogVersion): Promise<
     return
   }
   reportInstall(plugin, version).catch(() => {})
-  inu.ui.openChatHistory({
+  const history = inu.ui.openChatHistory({
     title: `${plugin.name} ${version.version}`,
     subtitle: t('tapFile'),
     load: (cursor) => cursor === null ? { entries: [{ message: message.raw }] } : { entries: [] },
   })
+  // the user may have installed it: look at the plugins directory again once they come back
+  history.closed
+    .then(() => {
+      installed = scanInstalled() ?? installed
+      listPage.invalidate()
+      onDone?.()
+    })
+    .catch(() => {})
 }
 
 const lang = () => inu.info().language
@@ -120,6 +128,9 @@ const STRINGS = {
   updates: { en: 'Updates available', ru: 'Доступны обновления' },
   all: { en: 'All plugins', ru: 'Все плагины' },
   update: { en: 'Update to', ru: 'Обновить до' },
+  upToDate: { en: 'Installed', ru: 'Установлена' },
+  upToDateToast: { en: 'The latest version is already installed', ru: 'Последняя версия уже установлена' },
+  current: { en: 'installed', ru: 'установлена' },
   installedVersion: { en: 'Installed', ru: 'Установлена' },
   noFile: { en: 'File not found', ru: 'Файл не найден' },
 } as const
@@ -168,27 +179,45 @@ function visiblePlugins(): { updates: CatalogPlugin[], rest: CatalogPlugin[] } {
   return { updates: found.filter(p => updateFrom(p)), rest: found.filter(p => !updateFrom(p)) }
 }
 
-function installSafely(plugin: CatalogPlugin, version: CatalogVersion): void {
-  install(plugin, version).catch(e => inu.ui.toast(String(e?.message ?? e)))
+function installSafely(plugin: CatalogPlugin, version: CatalogVersion, onDone?: () => void): void {
+  install(plugin, version, onDone).catch(e => inu.ui.toast(String(e?.message ?? e)))
 }
 
 function openDetail(plugin: CatalogPlugin): void {
   const newest = latest(plugin)
   const repo = safeRepoUrl(plugin.repo)
   let shots: Awaited<ReturnType<typeof buildGallery>> = null
+
+  const haveVersion = () => installed?.get(plugin.id)
+  const isLatestInstalled = () => {
+    const have = haveVersion()
+    return !!have && !!newest && compareVersions(have, newest.version) >= 0
+  }
+  // "inactive" when the latest version is installed: the button stays but installs nothing
+  const cta = () => {
+    if (!newest) return undefined
+    const have = haveVersion()
+    if (isLatestInstalled()) {
+      return { text: `${t('upToDate')} ${have} ✓`, onClick: () => inu.ui.toast(t('upToDateToast')) }
+    }
+    return {
+      text: `${have ? t('update') : t('installLatest')} ${newest.version}`,
+      onClick: () => installSafely(plugin, newest, () => page.invalidate()),
+    }
+  }
+
+  installed = scanInstalled() ?? installed
   const page = inu.ui.settingsPage({
     title: plugin.name,
     transient: true,
-    bottomButton: newest
-      ? {
-          text: `${updateFrom(plugin) ? t('update') : t('installLatest')} ${newest.version}`,
-          onClick: () => installSafely(plugin, newest),
-        }
-      : undefined,
+    // a getter, so the label follows the installed version if the page re-reads it
+    get bottomButton() {
+      return cta()
+    },
     items: () => [
       inu.ui.header(`${plugin.author} · ${plugin.installs} ${t('installs')}`),
-      ...(installed?.get(plugin.id)
-        ? [inu.ui.separator(`${t('installedVersion')}: ${installed.get(plugin.id)}`)]
+      ...(haveVersion()
+        ? [inu.ui.separator(`${t('installedVersion')}: ${haveVersion()}${isLatestInstalled() ? ' ✓' : ''}`)]
         : []),
       inu.ui.separator(localized(plugin.description, lang())),
       ...(shots ? [shots] : []),
@@ -206,8 +235,8 @@ function openDetail(plugin: CatalogPlugin): void {
         text: v.version,
         subtitle: v.changelog,
         multiline: true,
-        value: inu.utils.formatDate(v.date * 1000),
-        onClick: () => installSafely(plugin, v),
+        value: `${inu.utils.formatDate(v.date * 1000)}${haveVersion() && compareVersions(haveVersion()!, v.version) === 0 ? ` · ✓ ${t('current')}` : ''}`,
+        onClick: () => installSafely(plugin, v, () => page.invalidate()),
       })),
     ],
   })

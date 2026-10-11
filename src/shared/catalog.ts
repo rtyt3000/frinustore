@@ -75,9 +75,12 @@ export function safeRepoUrl(repo: string | undefined): string | null {
   }
 }
 
-/** numeric dotted compare (`1.10.0` > `1.9.0`); a prerelease suffix is ignored */
+/**
+ * compares every number in the string in order, so `1.10.0` > `1.9.0` and a port revision counts:
+ * `1.0.4-inugram.3` > `1.0.4-inugram.2` > `1.0.4`
+ */
 export function compareVersions(a: string, b: string): number {
-  const parts = (v: string) => v.split(/[-+]/)[0]!.split('.').map(n => Number.parseInt(n, 10) || 0)
+  const parts = (v: string) => (v.match(/\d+/g) ?? []).map(Number)
   const pa = parts(a)
   const pb = parts(b)
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
