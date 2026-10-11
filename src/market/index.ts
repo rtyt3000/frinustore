@@ -10,6 +10,7 @@ const CACHE_KEY = 'catalog'
 
 let catalog: Catalog | null = readCache()
 let loading = false
+let started = false
 let error: string | null = null
 
 function readCache(): Catalog | null {
@@ -156,6 +157,11 @@ function openDetail(plugin: CatalogPlugin): void {
 const listPage = inu.ui.settingsPage({
   title: t('title'),
   items: () => {
+    // the page can be opened from the plugin list, not only from our action
+    if (!started) {
+      started = true
+      setTimeout(refresh, 0)
+    }
     const plugins = visiblePlugins()
     return [
       inu.ui.button({
@@ -204,3 +210,6 @@ inu.registerGlobalAction({
     refresh()
   },
 })
+
+// second entry point for when the menu is minimal: "Settings" next to the plugin in the plugin list
+inu.registerSettings(listPage)
