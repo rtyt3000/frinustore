@@ -1,5 +1,6 @@
 import type { Catalog, CatalogPlugin, CatalogVersion } from '../shared/catalog.js'
-import { latest, localized } from '../shared/catalog.js'
+import type { SortMode } from '../shared/catalog.js'
+import { latest, localized, safeRepoUrl, SORT_MODES, sortPlugins } from '../shared/catalog.js'
 import { iconFor } from './icons.js'
 
 // public channel with the catalog (pinned `catalog.json`) and the plugin files
@@ -109,6 +110,9 @@ const STRINGS = {
   install: { en: 'Install', ru: 'Установить' },
   installLatest: { en: 'Install latest', ru: 'Установить последнюю' },
   tapFile: { en: 'Tap the file to install', ru: 'Нажмите на файл, чтобы установить' },
+  sort: { en: 'Sort by', ru: 'Сортировка' },
+  repo: { en: 'Source code', ru: 'Исходный код' },
+  noRepo: { en: 'No repository', ru: 'Нет репозитория' },
   noFile: { en: 'File not found', ru: 'Файл не найден' },
 } as const
 
@@ -117,13 +121,32 @@ function t(key: keyof typeof STRINGS): string {
   return lang() === 'ru' ? entry.ru : entry.en
 }
 
+const SORT_LABELS: Record<SortMode, { en: string, ru: string }> = {
+  popular: { en: 'Popular', ru: 'Популярные' },
+  updated: { en: 'Recently updated', ru: 'Недавно обновлённые' },
+  new: { en: 'New', ru: 'Новые' },
+  name: { en: 'Name', ru: 'По названию' },
+}
+
+const SORT_KEY = 'sort'
+
+function readSort(): SortMode {
+  try {
+    const stored = localStorage.getItem(SORT_KEY) as SortMode | null
+    return stored && SORT_MODES.includes(stored) ? stored : 'popular'
+  } catch {
+    return 'popular'
+  }
+}
+
+let sort: SortMode = readSort()
 let query = ''
 
 function visiblePlugins(): CatalogPlugin[] {
   const q = query.trim().toLowerCase()
-  return [...(catalog?.plugins ?? [])]
+  const found = (catalog?.plugins ?? [])
     .filter(p => !q || `${p.name} ${p.author} ${localized(p.description, lang())}`.toLowerCase().includes(q))
-    .sort((a, b) => b.installs - a.installs)
+  return sortPlugins(found, sort)
 }
 
 function installSafely(plugin: CatalogPlugin, version: CatalogVersion): void {
@@ -132,6 +155,7 @@ function installSafely(plugin: CatalogPlugin, version: CatalogVersion): void {
 
 function openDetail(plugin: CatalogPlugin): void {
   const newest = latest(plugin)
+  const repo = safeRepoUrl(plugin.repo)
   inu.ui.openPage(inu.ui.settingsPage({
     title: plugin.name,
     transient: true,
@@ -141,6 +165,14 @@ function openDetail(plugin: CatalogPlugin): void {
     items: () => [
       inu.ui.header(`${plugin.author} · ${plugin.installs} ${t('installs')}`),
       inu.ui.separator(localized(plugin.description, lang())),
+      inu.ui.button({
+        id: 'repo',
+        text: t('repo'),
+        icon: inu.icons.common('link'),
+        value: repo ? new URL(repo).host : t('noRepo'),
+        subtitle: repo ?? undefined,
+        onClick: () => { if (repo) inu.openUrl(repo) },
+      }),
       inu.ui.header(t('versions')),
       ...[...plugin.versions].sort((a, b) => b.date - a.date).map(v => inu.ui.button({
         id: `v:${v.version}`,
@@ -180,6 +212,17 @@ const listPage = inu.ui.settingsPage({
         onSecondaryClick: () => {
           query = ''
           listPage.invalidate()
+        },
+      }),
+      inu.ui.select({
+        id: 'sort',
+        text: t('sort'),
+        icon: inu.icons.common('more'),
+        items: SORT_MODES.map(m => lang() === 'ru' ? SORT_LABELS[m].ru : SORT_LABELS[m].en),
+        selected: SORT_MODES.indexOf(sort),
+        onChange: (index) => {
+          sort = SORT_MODES[index] ?? 'popular'
+          try { localStorage.setItem(SORT_KEY, sort) } catch {}
         },
       }),
       ...(error ? [inu.ui.separator(`${t('error')}: ${error}`)] : []),

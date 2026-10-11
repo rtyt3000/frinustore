@@ -51,7 +51,7 @@ bun x inu list                    # установленные плагины
 
 ## Гранты плагина
 
-`account.read(peers)`, `account.read(messages)`, `invokeRpc(messages.search)`, `invokeRpc(messages.getInlineBotResults)`. Без `unsafe.*`.
+`account.read(peers)`, `account.read(messages)`, `invokeRpc(messages.search)`, `invokeRpc(messages.getInlineBotResults)`, `openUrl`. Без `unsafe.*`.
 
 ## Настройка
 
@@ -61,4 +61,5 @@ bun x inu list                    # установленные плагины
 
 - Публичного API установки плагина нет: установка идёт через тап по файлу в открытом сообщении (проверить на устройстве).
 - Нет API списка установленных плагинов, поэтому статусов «установлен» и «есть обновление» нет.
+- Ссылка на репозиторий обязательна для каждого плагина (задача бота: [docs/BOT_TASK_REPO.md](docs/BOT_TASK_REPO.md)).
 - Иконки только встроенные, эмодзи и стикеры, произвольных картинок нет.
