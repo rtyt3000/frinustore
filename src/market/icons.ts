@@ -9,30 +9,38 @@ const COMMON = new Set<string>([
   'plus', 'minus', 'check', 'close', 'more', 'translate', 'bookmark',
 ])
 
+// no `URL` here: the engine's implementation of non-http schemes is not specified
+function param(query: string, name: string): string | null {
+  const m = new RegExp(`(?:^|&)${name}=([^&#]*)`).exec(query)
+  return m ? decodeURIComponent(m[1]!) : null
+}
+
 export function iconFor(spec: string | undefined): ReturnType<typeof inu.icons.common> {
   const fallback = inu.icons.common('bot')
-  if (!spec) return fallback
+  const value = spec?.trim()
+  if (!value) return fallback
   try {
-    if (spec.startsWith('inu://')) {
-      const name = spec.slice('inu://'.length)
-      return COMMON.has(name) ? inu.icons.common(name as CommonName) : fallback
+    if (value.startsWith('inu://')) {
+      const name = value.slice('inu://'.length)
+      if (COMMON.has(name)) return inu.icons.common(name as CommonName)
+    } else {
+      const m = /^tg:\/\/(emoji|addstickers)\/?\?([^#]*)/.exec(value)
+      if (m?.[1] === 'emoji') {
+        const id = param(m[2]!, 'id')
+        if (id) return inu.icons.customEmoji(id)
+      } else if (m?.[1] === 'addstickers') {
+        const slug = param(m[2]!, 'set')
+        if (slug) {
+          const id = param(m[2]!, 'id')
+          if (id) return inu.icons.sticker({ slug, id })
+          const idx = Number(param(m[2]!, 'idx') ?? 0)
+          return inu.icons.sticker({ slug, index: Number.isInteger(idx) && idx >= 0 ? idx : 0 })
+        }
+      }
     }
-    const url = new URL(spec)
-    if (url.protocol !== 'tg:') return fallback
-    if (url.hostname === 'emoji') {
-      const id = url.searchParams.get('id')
-      return id ? inu.icons.customEmoji(id, { static: true }) : fallback
-    }
-    if (url.hostname === 'addstickers') {
-      const slug = url.searchParams.get('set')
-      if (!slug) return fallback
-      const id = url.searchParams.get('id')
-      if (id) return inu.icons.sticker({ slug, id, static: true })
-      const idx = Number(url.searchParams.get('idx') ?? 0)
-      return inu.icons.sticker({ slug, index: Number.isInteger(idx) && idx >= 0 ? idx : 0, static: true })
-    }
-  } catch {
-    // malformed icon from the catalog: fall through
+    console.warn('icon not recognized, using default:', value)
+  } catch (e) {
+    console.warn('icon failed, using default:', value, e)
   }
   return fallback
 }
