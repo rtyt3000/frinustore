@@ -1,5 +1,6 @@
 import type { Catalog, CatalogPlugin, CatalogVersion } from '../shared/catalog.js'
 import { latest, localized } from '../shared/catalog.js'
+import { iconFor } from './icons.js'
 
 // public channel with the catalog (pinned `catalog.json`) and the plugin files
 const CHANNEL = 'frinu_store'
@@ -81,65 +82,122 @@ async function install(plugin: CatalogPlugin, version: CatalogVersion): Promise<
   const peer = await account.resolvePeer(CHANNEL)
   const message = await account.getMessages(peer, version.msgId)
   if (!message) {
-    inu.ui.toast('File not found')
+    inu.ui.toast(t('noFile'))
     return
   }
   reportInstall(plugin, version).catch(() => {})
   inu.ui.openChatHistory({
     title: `${plugin.name} ${version.version}`,
-    subtitle: 'Tap the file to install',
+    subtitle: t('tapFile'),
     load: (cursor) => cursor === null ? { entries: [{ message: message.raw }] } : { entries: [] },
   })
 }
 
 const lang = () => inu.info().language
 
-function iconOf(plugin: CatalogPlugin): ReturnType<typeof inu.icons.common> {
-  return inu.icons.common('bot')
+const STRINGS = {
+  title: { en: 'Plugin market', ru: 'Магазин плагинов' },
+  loading: { en: 'Loading…', ru: 'Загрузка…' },
+  empty: { en: 'Nothing found', ru: 'Ничего не найдено' },
+  error: { en: 'Failed to load', ru: 'Не удалось загрузить' },
+  refresh: { en: 'Refresh', ru: 'Обновить' },
+  search: { en: 'Search', ru: 'Поиск' },
+  clear: { en: 'Clear search', ru: 'Сбросить поиск' },
+  installs: { en: 'installs', ru: 'установок' },
+  versions: { en: 'Versions', ru: 'Версии' },
+  install: { en: 'Install', ru: 'Установить' },
+  installLatest: { en: 'Install latest', ru: 'Установить последнюю' },
+  tapFile: { en: 'Tap the file to install', ru: 'Нажмите на файл, чтобы установить' },
+  noFile: { en: 'File not found', ru: 'Файл не найден' },
+} as const
+
+function t(key: keyof typeof STRINGS): string {
+  const entry = STRINGS[key]
+  return lang() === 'ru' ? entry.ru : entry.en
 }
 
-function detailPage(plugin: CatalogPlugin): ReturnType<typeof inu.ui.settingsPage> {
-  const page = inu.ui.settingsPage({
+let query = ''
+
+function visiblePlugins(): CatalogPlugin[] {
+  const q = query.trim().toLowerCase()
+  return [...(catalog?.plugins ?? [])]
+    .filter(p => !q || `${p.name} ${p.author} ${localized(p.description, lang())}`.toLowerCase().includes(q))
+    .sort((a, b) => b.installs - a.installs)
+}
+
+function installSafely(plugin: CatalogPlugin, version: CatalogVersion): void {
+  install(plugin, version).catch(e => inu.ui.toast(String(e?.message ?? e)))
+}
+
+function openDetail(plugin: CatalogPlugin): void {
+  const newest = latest(plugin)
+  inu.ui.openPage(inu.ui.settingsPage({
     title: plugin.name,
+    transient: true,
+    bottomButton: newest
+      ? { text: `${t('installLatest')} ${newest.version}`, onClick: () => installSafely(plugin, newest) }
+      : undefined,
     items: () => [
-      inu.ui.header(`${plugin.author} · ${plugin.installs} installs`),
+      inu.ui.header(`${plugin.author} · ${plugin.installs} ${t('installs')}`),
       inu.ui.separator(localized(plugin.description, lang())),
-      inu.ui.header('Versions'),
+      inu.ui.header(t('versions')),
       ...[...plugin.versions].sort((a, b) => b.date - a.date).map(v => inu.ui.button({
         id: `v:${v.version}`,
         text: v.version,
         subtitle: v.changelog,
+        multiline: true,
         value: inu.utils.formatDate(v.date * 1000),
-        onClick: () => { install(plugin, v).catch(e => inu.ui.toast(String(e?.message ?? e))) },
+        onClick: () => installSafely(plugin, v),
       })),
     ],
-  })
-  return page
+  }))
 }
 
 const listPage = inu.ui.settingsPage({
-  title: 'Plugin market',
-  items: () => [
-    ...(error ? [inu.ui.separator(`Error: ${error}`)] : []),
-    ...(loading && !catalog ? [inu.ui.separator('Loading…')] : []),
-    ...(catalog?.plugins ?? []).map((p) => {
-      const v = latest(p)
-      return inu.ui.button({
-        id: p.id,
-        text: p.name,
-        subtitle: localized(p.description, lang()),
-        icon: iconOf(p),
-        value: v?.version,
-        onClick: () => inu.ui.openPage(detailPage(p)),
-      })
-    }),
-    inu.ui.button({ id: 'refresh', text: 'Refresh', icon: inu.icons.common('download'), onClick: refresh }),
-  ],
+  title: t('title'),
+  items: () => {
+    const plugins = visiblePlugins()
+    return [
+      inu.ui.button({
+        id: 'search',
+        text: t('search'),
+        icon: inu.icons.common('search'),
+        value: query || undefined,
+        onClick: () => {
+          inu.ui.prompt({ title: t('search'), value: query })
+            .then((value) => {
+              if (value !== null) query = value
+              listPage.invalidate()
+            })
+            .catch(() => {})
+        },
+        onSecondaryClick: () => {
+          query = ''
+          listPage.invalidate()
+        },
+      }),
+      ...(error ? [inu.ui.separator(`${t('error')}: ${error}`)] : []),
+      ...(loading && !catalog ? [inu.ui.separator(t('loading'))] : []),
+      ...(!loading && catalog && plugins.length === 0 ? [inu.ui.separator(t('empty'))] : []),
+      ...plugins.map((p) => {
+        const v = latest(p)
+        return inu.ui.button({
+          id: `p:${p.id}`,
+          text: p.name,
+          subtitle: localized(p.description, lang()),
+          icon: iconFor(p.icon),
+          value: v?.version,
+          onClick: () => openDetail(p),
+        })
+      }),
+      inu.ui.button({ id: 'refresh', text: t('refresh'), icon: inu.icons.common('refresh'), onClick: refresh }),
+    ]
+  },
 })
 
 inu.registerGlobalAction({
   id: 'open-market',
-  text: 'Plugin market',
+  text: t('title'),
   icon: inu.icons.common('bot'),
   callback: () => {
     inu.ui.openPage(listPage)
