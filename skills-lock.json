@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "inugram-plugin-port": {
+      "source": "teidesu/inugram",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/inugram-plugin-port/SKILL.md",
+      "computedHash": "a5eae40b52b843ad1459ec7afbb558ee4c453068741d2942cb088bee1b411a73"
+    }
+  }
+}
