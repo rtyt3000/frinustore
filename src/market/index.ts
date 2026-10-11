@@ -142,17 +142,6 @@ function readSort(): SortMode {
 let sort: SortMode = readSort()
 let query = ''
 
-const sortLabel = (m: SortMode) => lang() === 'ru' ? SORT_LABELS[m].ru : SORT_LABELS[m].en
-
-function askSearch(): void {
-  inu.ui.prompt({ title: t('search'), value: query })
-    .then((value) => {
-      if (value !== null) query = value
-      listPage.invalidate()
-    })
-    .catch(() => {})
-}
-
 function visiblePlugins(): CatalogPlugin[] {
   const q = query.trim().toLowerCase()
   const found = (catalog?.plugins ?? [])
@@ -207,26 +196,35 @@ const listPage = inu.ui.settingsPage({
     }
     const plugins = visiblePlugins()
     return [
-      // one row: the declarative UI has no toolbar, so search, sort and refresh live in its menu
       inu.ui.button({
-        id: 'tools',
-        text: query ? `«${query}»` : t('search'),
-        subtitle: `${t('sort')}: ${sortLabel(sort)}`,
+        id: 'search',
+        text: t('search'),
         icon: inu.icons.common('search'),
-        onClick: anchor => anchor.openMenu([
-          { text: `🔍 ${t('search')}`, onClick: askSearch },
-          ...(query ? [{ text: `✖ ${t('clear')}`, onClick: () => { query = ''; listPage.invalidate() } }] : []),
-          ...SORT_MODES.map(m => ({
-            text: sortLabel(m),
-            checked: m === sort,
-            onClick: () => {
-              sort = m
-              try { localStorage.setItem(SORT_KEY, m) } catch {}
+        value: query || undefined,
+        onClick: () => {
+          inu.ui.prompt({ title: t('search'), value: query })
+            .then((value) => {
+              if (value !== null) query = value
               listPage.invalidate()
-            },
-          })),
-          { text: `🔄 ${t('refresh')}`, onClick: refresh },
-        ]),
+            })
+            .catch(() => {})
+        },
+        onSecondaryClick: () => {
+          query = ''
+          listPage.invalidate()
+        },
+      }),
+      inu.ui.button({ id: 'refresh', text: t('refresh'), icon: inu.icons.common('refresh'), onClick: refresh }),
+      inu.ui.select({
+        id: 'sort',
+        text: t('sort'),
+        icon: inu.icons.common('more'),
+        items: SORT_MODES.map(m => lang() === 'ru' ? SORT_LABELS[m].ru : SORT_LABELS[m].en),
+        selected: SORT_MODES.indexOf(sort),
+        onChange: (index) => {
+          sort = SORT_MODES[index] ?? 'popular'
+          try { localStorage.setItem(SORT_KEY, sort) } catch {}
+        },
       }),
       ...(error ? [inu.ui.separator(`${t('error')}: ${error}`)] : []),
       ...(loading && !catalog ? [inu.ui.separator(t('loading'))] : []),
