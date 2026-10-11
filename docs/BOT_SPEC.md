@@ -4,7 +4,7 @@
 Бот принимает плагины от пользователей, публикует файлы в канал и поддерживает `catalog.json`.
 
 ## 1. Стек
-- TypeScript на Bun, grammY (Bot API), SQLite (`bun:sqlite`) как **источник истины**.
+- TypeScript, grammY (Bot API), хостинг **Vercel** (см. раздел 13). Postgres (Neon) как **источник истины**.
 - Канал и закреплённый `catalog.json` — только выходной артефакт, бот никогда не читает из него состояние.
 - Бот — администратор канала (публикация, редактирование, закрепление). Токен и ID админов — в `.env`.
 
@@ -86,18 +86,18 @@
 - `installs` в каталоге обновляется не чаще раза в 10 минут (батч), чтобы не редактировать закреп на каждое нажатие.
 Если схема окажется неудобной — вынести в открытый вопрос, не блокирует v1 (можно держать `installs: 0`).
 
-## 9. БД (SQLite)
+## 9. БД (Postgres, Neon через Vercel Marketplace)
 - `users(id, banned, created_at)`
 - `plugins(id TEXT PK, owner_user_id, name, author, description_json, icon, hidden, created_at)`
 - `versions(plugin_id, version, msg_id, date, changelog, grants_json, status[pending|approved|rejected|hidden], file_sha256)`
 - `installs(plugin_id, user_id, created_at)` unique(plugin_id,user_id)
 - `meta(key, value)` — id закреплённого сообщения каталога.
-Миграции — простые SQL-файлы.
+Миграции — простые SQL-файлы. Доп. таблица `sessions(user_id, state, payload_json, updated_at)` — шаги диалога (ожидание changelog, подтверждение), т.к. память между вызовами функции не живёт.
 
 ## 10. Нефункциональное
-- Long polling для v1 (webhook не нужен).
+- Webhook на Vercel (раздел 13), long polling только для локальной разработки.
 - Логи структурированные; ошибки публикации — модераторам в личку.
-- Резервная копия БД: команда `/backup` (модератор) присылает файл БД.
+- Резервная копия: команда `/backup` (модератор) присылает JSON-дамп таблиц (`pg_dump` на serverless недоступен).
 - Команда `/rebuild` (модератор) — принудительная пересборка каталога из БД.
 - Идемпотентность: повторная отправка одного файла (`sha256`) не создаёт дубль.
 - Тесты: парсер заголовка, semver-сравнение, сборка каталога, проверка прав.
@@ -111,3 +111,48 @@
 - Невалидный/превышающий лимит файл отклоняется с понятной причиной.
 - Удаление версии убирает её из канала и каталога.
 - Клиент `src/market` открывает каталог без изменений схемы.
+
+## 13. Деплой на Vercel
+
+### Архитектура
+- Бот — serverless-функция `api/webhook.ts` (Bun runtime: `"bunVersion": "1.x"` в `vercel.json`, либо Node 22 — выбрать один и не смешивать). grammY через `webhookCallback(bot, "std/http")`.
+- Webhook регистрируется скриптом `bun run set-webhook` (`setWebhook` с `secret_token`, `allowed_updates: ["message","callback_query"]`, `drop_pending_updates` при смене). Функция отклоняет запросы без верного заголовка `X-Telegram-Bot-Api-Secret-Token` (401).
+- Файловая система эфемерна: SQLite и локальные файлы **не использовать**. Файл плагина скачивается в память (`getFile` -> fetch, лимит Bot API 20 МБ, наш лимит 5 МБ) и сразу отправляется в канал по `file_id` / буфером.
+- Состояние диалога и очередь пересборки — только в Postgres.
+
+### Ограничения и решения
+| Проблема | Решение |
+| --- | --- |
+| Таймаут функции (Hobby 10–60 с, зависит от плана) | Webhook отвечает быстро; тяжёлая публикация (отправка файла, пересборка каталога) укладывается в один вызов, при `maxDuration` в `vercel.json` выставить максимум плана. Если не укладывается — публикация ставится в таблицу `jobs`, обрабатывается cron-ом |
+| Параллельные вызовы | Пересборка каталога под `pg_advisory_lock` (или `SELECT ... FOR UPDATE` на строке `meta`); при занятом локе — поставить `jobs(type='rebuild')` и выйти |
+| Повторная доставка апдейта Telegram | Таблица `processed_updates(update_id PK)`; повтор игнорируется. Отвечать 200 даже при ошибке бизнес-логики (иначе Telegram будет ретраить) |
+| Холодный старт | Минимум зависимостей, соединение с БД через pooled URL / `@neondatabase/serverless`, клиент создаётся на уровне модуля |
+| Фоновая батч-задача (`installs` раз в 10 мин) | Vercel Cron -> `api/cron/flush.ts`, защита заголовком `Authorization: Bearer $CRON_SECRET`. На Hobby cron только раз в сутки — тогда либо Pro, либо обновлять каталог при каждой публикации + суточный cron |
+| Rate limit Telegram (editMessageMedia закрепа) | Дебаунс: `jobs` с коалесингом (несколько запросов на пересборку = одна пересборка) |
+
+### Конфигурация (Environment Variables)
+`BOT_TOKEN`, `WEBHOOK_SECRET`, `CRON_SECRET`, `DATABASE_URL`, `CHANNEL_ID` (числовой `-100…`), `CHANNEL_USERNAME=frinu_store`, `ADMIN_IDS`, `MODERATION`, `DAILY_LIMIT`. Секреты только в Vercel, локально `.env` в `.gitignore`.
+
+### Структура репозитория бота
+```
+api/webhook.ts        # входная точка Telegram
+api/cron/flush.ts     # батч installs + выполнение jobs
+src/bot.ts            # grammY: команды, сценарии
+src/plugin-header.ts  # парсер заголовка + тесты
+src/catalog.ts        # сборка catalog.json (типы из схемы клиента)
+src/publish.ts        # публикация/откат
+src/db.ts, migrations/
+scripts/set-webhook.ts, scripts/migrate.ts
+vercel.json           # functions.maxDuration, crons
+```
+
+### CI/CD
+- Деплой из GitHub: preview на PR, production с `main`. Preview-деплои используют **отдельного тестового бота и тестовый канал** (отдельные env для Preview), чтобы не писать в боевой канал.
+- Миграции: `bun run migrate` как шаг build-команды (идемпотентные, с таблицей версий).
+- После деплоя `set-webhook` на production URL (вручную или `postbuild` только для Production).
+
+### Приёмка деплоя
+- `getWebhookInfo` без `last_error_message`, 200 на валидный апдейт, 401 без секрета.
+- Публикация плагина через задеплоенный бот доходит до обновлённого закрепа.
+- Два одновременных апдейта не портят `catalog.json` (проверить нагрузочным скриптом из двух параллельных публикаций).
+- Повторная доставка того же `update_id` не создаёт дубль версии.
